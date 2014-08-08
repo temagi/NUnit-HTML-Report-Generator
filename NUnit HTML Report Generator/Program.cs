@@ -42,6 +42,12 @@ namespace Jatech.NUnit
     {
         #region Private Constants
 
+        private static string projectName = "";
+
+        static string currentDir = "";
+
+        static string defaultURL = "http://10.16.32.150:8080/job/";
+
         /// <summary>
         /// Usage example.
         /// </summary>
@@ -68,7 +74,7 @@ namespace Jatech.NUnit
         static void Main(string[] args)
         {
             StringBuilder html = new StringBuilder();
-            bool ok = false;
+            bool ok = true;
             string input = string.Empty, output = string.Empty;
 
             if (args.Length == 1)
@@ -88,7 +94,7 @@ namespace Jatech.NUnit
                     output = Path.ChangeExtension(input, "html");
 
                     // Check input file exists and output file doesn't
-                    ok = CheckInputAndOutputFile(input, output);
+                    //ok = CheckInputAndOutputFile(input, output);
                 }
             }
             else if (args.Length == 2)
@@ -99,7 +105,7 @@ namespace Jatech.NUnit
                 output = args[1];
 
                 // Check input file exists and output file doesn't
-                ok = CheckInputAndOutputFile(input, output);
+                //ok = CheckInputAndOutputFile(input, output);
             }
             else
             {
@@ -117,6 +123,15 @@ namespace Jatech.NUnit
 
                 // Save HTML to the output file
                 File.WriteAllText(output, html.ToString());
+                
+                // copy HTML and XML files to currentBuildFir
+                // and generate
+                if (File.Exists(input) && File.Exists(output) && currentDir != "")
+                {
+                    File.Copy(input, currentDir + input.Substring(input.LastIndexOf("\\")), true);
+                    File.Copy(output, currentDir + output.Substring(output.LastIndexOf("\\")), true);
+                    GenerateJenkinsRichText(currentDir, currentDir + output.Substring(output.LastIndexOf("\\")));
+                }
             }
         }
 
@@ -141,14 +156,14 @@ namespace Jatech.NUnit
 
             if (File.Exists(input))
             {
-                if (!File.Exists(output))
-                {
+                //if (!File.Exists(output))
+                //{
                     ok = true;
-                }
-                else
-                {
-                    Console.WriteLine(string.Format("Output file '{0}' already exists", output));
-                }
+                //}
+                //else
+                //{
+                //    Console.WriteLine(string.Format("Output file '{0}' already exists", output));
+                //}
             }
             else
             {
@@ -186,6 +201,10 @@ namespace Jatech.NUnit
             int testInvalid = int.Parse(!string.IsNullOrEmpty(doc.Attribute("invalid").Value) ? doc.Attribute("invalid").Value : "0");
             DateTime testDate = DateTime.Parse(string.Format("{0} {1}", doc.Attribute("date").Value, doc.Attribute("time").Value));
             string testPlatform = doc.Element("environment").Attribute("platform").Value;
+
+            // get project name
+            projectName = GetProjectName(doc.Attribute("name").Value);
+            
 
             // Calculate the success rate
             decimal percentage = 0;
@@ -244,106 +263,111 @@ namespace Jatech.NUnit
         {
             StringBuilder html = new StringBuilder();
             int index = 0;
-            string fixtureName, fixtureNamespace, fixtureTime, fixtureResult, fixtureReason;
+            string fixtureName, fixtureTime, fixtureResult, fixtureReason;
 
             // Loop through all of the fixtures
             foreach (var fixture in fixtures)
             {
-                // Load fixture details
-                fixtureName = fixture.Attribute("name").Value;
-                fixtureNamespace = GetElementNamespace(fixture);
-                fixtureTime = fixture.Attribute("time") != null ? fixture.Attribute("time").Value : string.Empty;
-                fixtureResult = fixture.Attribute("result").Value;
-                fixtureReason = fixture.Element("reason") != null ? fixture.Element("reason").Element("message").Value : string.Empty;
-
-                html.AppendLine("<div class=\"col-md-3\">");
-                html.AppendLine("<div class=\"panel ");
-
-                // Colour code panels
-                switch (fixtureResult.ToLower())
+                if (fixture.Attribute("result").Value != "Inconclusive")
                 {
-                    case "success":
-                        html.Append("panel-success");
-                        break;
-                    case "ignored":
-                        html.Append("panel-info");
-                        break;
-                    case "failure":
-                    case "error":
-                        html.Append("panel-danger");
-                        break;
-                    default:
-                        html.Append("panel-default");
-                        break;
+                    // Load fixture details
+                    fixtureName = fixture.Attribute("name").Value;
+                    //fixtureNamespace = GetElementNamespace(fixture);
+                    fixtureTime = fixture.Attribute("time") != null ? fixture.Attribute("time").Value : string.Empty;
+                    fixtureResult = fixture.Attribute("result").Value;
+                    fixtureReason = fixture.Element("reason") != null ? fixture.Element("reason").Element("message").Value : string.Empty;
+
+                    html.AppendLine("<div class=\"col-md-3\">");
+                    html.AppendLine("<div class=\"panel ");
+
+                    // Colour code panels
+                    switch (fixtureResult.ToLower())
+                    {
+                        case "success":
+                            html.Append("panel-success");
+                            break;
+                        case "ignored":
+                            html.Append("panel-info");
+                            break;
+                        case "failure":
+                        case "error":
+                            html.Append("panel-danger");
+                            break;
+                        default:
+                            html.Append("panel-default");
+                            break;
+                    }
+
+                    html.Append("\">");
+                    html.AppendLine("<div class=\"panel-heading\">");
+                    //html.AppendLine(string.Format("{0} - <small>{1}</small><small class=\"pull-right\">{2}</small>", fixtureName, /*fixtureNamespace,*/ fixtureTime));
+                    html.AppendLine(string.Format("{0} <small class=\"pull-right\">{1}</small>", fixtureName, fixtureTime));
+
+                    // If the fixture has a reason, display an icon 
+                    // on the top of the panel with a tooltip containing 
+                    // the reason
+                    if (!string.IsNullOrEmpty(fixtureReason))
+                    {
+                        html.AppendLine(string.Format("<span class=\"glyphicon glyphicon-info-sign pull-right info hidden-print\" data-toggle=\"tooltip\" title=\"{0}\"></span>", fixtureReason));
+                    }
+
+                    html.AppendLine("</div>");
+                    html.AppendLine("<div class=\"panel-body\">");
+
+                    // Generate a unique id for the modal dialog
+                    string modalId = string.Format("modal-{0}-{1}", Regex.Replace(HttpUtility.UrlEncode(fixtureName), string.Empty), index++);
+
+                    html.AppendLine("<div class=\"text-center\" style=\"font-size: 1.5em;\">");
+
+                    // Add a colour coded link to the modal dialog
+                    switch (fixtureResult.ToLower())
+                    {
+                        case "success":
+                            html.AppendLine(string.Format("<a href=\"#{0}\" role=\"button\" data-toggle=\"modal\" class=\"text-success no-underline\">", modalId));
+                            html.AppendLine("<span class=\"glyphicon glyphicon-ok-sign\"></span>");
+                            html.AppendLine("<span class=\"test-result\">Success</span>");
+                            html.AppendLine("</a>");
+                            break;
+                        case "ignored":
+                            html.AppendLine(string.Format("<a href=\"#{0}\" role=\"button\" data-toggle=\"modal\" class=\"text-info no-underline\">", modalId));
+                            html.AppendLine("<span class=\"glyphicon glyphicon-info-sign\"></span>");
+                            html.AppendLine("<span class=\"test-result\">Ignored</span>");
+                            html.AppendLine("</a>");
+                            break;
+                        case "notrunnable":
+                            html.AppendLine(string.Format("<a href=\"#{0}\" role=\"button\" data-toggle=\"modal\" class=\"text-default no-underline\">", modalId));
+                            html.AppendLine("<span class=\"glyphicon glyphicon-remove-sign\"></span>");
+                            html.AppendLine("<span class=\"test-result\">Not Runnable</span>");
+                            html.AppendLine("</a>");
+                            break;
+                        case "failure":
+                        case "error":
+                            html.AppendLine(string.Format("<a href=\"#{0}\" role=\"button\" data-toggle=\"modal\" class=\"text-danger no-underline\">", modalId));
+                            html.AppendLine("<span class=\"glyphicon glyphicon-exclamation-sign\"></span>");
+                            html.AppendLine("<span class=\"test-result\">Failed</span>");
+                            html.AppendLine("</a>");
+                            break;
+                        default:
+                            break;
+                    }
+
+                    html.AppendLine("</div>");
+
+                    // Generate a printable view of the fixtures
+                    html.AppendLine(GeneratePrintableView(fixture, fixtureReason));
+
+                    // Generate the modal dialog that will be shown
+                    // if the user clicks on the test-fixtures
+                    html.AppendLine(GenerateFixtureModal(fixture, modalId, fixtureName, fixtureReason));
+
+                    html.AppendLine("</div>");
+                    html.AppendLine("</div>");
+                    html.AppendLine("</div>");
                 }
-
-                html.Append("\">");
-                html.AppendLine("<div class=\"panel-heading\">");
-                html.AppendLine(string.Format("{0} - <small>{1}</small><small class=\"pull-right\">{2}</small>", fixtureName, fixtureNamespace, fixtureTime));
-
-                // If the fixture has a reason, display an icon 
-                // on the top of the panel with a tooltip containing 
-                // the reason
-                if (!string.IsNullOrEmpty(fixtureReason))
-                {
-                    html.AppendLine(string.Format("<span class=\"glyphicon glyphicon-info-sign pull-right info hidden-print\" data-toggle=\"tooltip\" title=\"{0}\"></span>", fixtureReason));
-                }
-
-                html.AppendLine("</div>");
-                html.AppendLine("<div class=\"panel-body\">");
-
-                // Generate a unique id for the modal dialog
-                string modalId = string.Format("modal-{0}-{1}", Regex.Replace(HttpUtility.UrlEncode(fixtureName), string.Empty), index++);
-
-                html.AppendLine("<div class=\"text-center\" style=\"font-size: 1.5em;\">");
-
-                // Add a colour coded link to the modal dialog
-                switch (fixtureResult.ToLower())
-                {
-                    case "success":
-                        html.AppendLine(string.Format("<a href=\"#{0}\" role=\"button\" data-toggle=\"modal\" class=\"text-success no-underline\">", modalId));
-                        html.AppendLine("<span class=\"glyphicon glyphicon-ok-sign\"></span>");
-                        html.AppendLine("<span class=\"test-result\">Success</span>");
-                        html.AppendLine("</a>");
-                        break;
-                    case "ignored":
-                        html.AppendLine(string.Format("<a href=\"#{0}\" role=\"button\" data-toggle=\"modal\" class=\"text-info no-underline\">", modalId));
-                        html.AppendLine("<span class=\"glyphicon glyphicon-info-sign\"></span>");
-                        html.AppendLine("<span class=\"test-result\">Ignored</span>");
-                        html.AppendLine("</a>");
-                        break;
-                    case "notrunnable":
-                        html.AppendLine(string.Format("<a href=\"#{0}\" role=\"button\" data-toggle=\"modal\" class=\"text-default no-underline\">", modalId));
-                        html.AppendLine("<span class=\"glyphicon glyphicon-remove-sign\"></span>");
-                        html.AppendLine("<span class=\"test-result\">Not Runnable</span>");
-                        html.AppendLine("</a>");
-                        break;
-                    case "failure":
-                    case "error":
-                        html.AppendLine(string.Format("<a href=\"#{0}\" role=\"button\" data-toggle=\"modal\" class=\"text-danger no-underline\">", modalId));
-                        html.AppendLine("<span class=\"glyphicon glyphicon-exclamation-sign\"></span>");
-                        html.AppendLine("<span class=\"test-result\">Failed</span>");
-                        html.AppendLine("</a>");
-                        break;
-                    default:
-                        break;
-                }
-
-                html.AppendLine("</div>");
-
-                // Generate a printable view of the fixtures
-                html.AppendLine(GeneratePrintableView(fixture, fixtureReason));
-
-                // Generate the modal dialog that will be shown
-                // if the user clicks on the test-fixtures
-                html.AppendLine(GenerateFixtureModal(fixture, modalId, fixtureName, fixtureReason));
-
-                html.AppendLine("</div>");
-                html.AppendLine("</div>");
-                html.AppendLine("</div>");
             }
-
+        
             return html.ToString();
+            
         }
 
         /// <summary>
@@ -380,6 +404,7 @@ namespace Jatech.NUnit
 
             string name, result;
             html.AppendLine("<div class=\"visible-print printed-test-result\">");
+            //Console.WriteLine(steps);
 
             // Display a warning message if set
             if (!string.IsNullOrEmpty(warningMessage))
@@ -444,6 +469,91 @@ namespace Jatech.NUnit
         }
 
         /// <summary>
+        /// Generate HTML file for build page with link to HTML report
+        /// </summary>
+        /// <param name="reportPath"></param>
+        /// <returns></returns>
+        private static void GenerateJenkinsRichText(string destination, string reportPath)
+        {
+            string defaultPath = "C:\\JenkinsRoot\\workspace\\" + projectName + "\\ERR_ScreenShots\\";
+            defaultPath = GetLastTestCaseDir(defaultPath);
+            defaultPath = defaultPath.Replace("\\", "/");
+            defaultPath = defaultPath.Replace("C:/JenkinsRoot/workspace/", defaultURL);
+            Console.WriteLine("defaultPath is: ", defaultPath);
+            StringBuilder html = new StringBuilder();
+            html.AppendLine("<!DOCTYPE html>");
+            html.AppendLine("<html>");
+            html.AppendLine("<body>");
+            html.AppendLine("<img height=\"48\" style=\"margin-right:1em\" width=\"48\" src=\"/static/32508f1a/images/48x48/clipboard.png\">");
+            html.AppendLine(string.Format("<a href=\"{0}\">HTML Report</a>", defaultPath.Replace("/ERR_ScreenShots/", "/ws/ERR_ScreenShots/") + "/HTML-report.html"));
+            Console.WriteLine(defaultPath);
+            html.AppendLine("</body>");
+            html.AppendLine("</html>");
+            Console.WriteLine(Directory.GetParent(Directory.GetParent(destination).ToString()).ToString() + "\\buildInfo.html");
+            File.WriteAllText(Directory.GetParent(Directory.GetParent(destination).ToString()).ToString() + "\\buildInfo.html", html.ToString());
+        }
+
+        /// <summary>
+        /// Read steps from file
+        /// </summary>
+        /// <param name="filePath"></param>
+        /// <returns>String with steps</returns>
+        private static StringBuilder GetStepsFromfile(string filePath)
+        {
+            StringBuilder sb = new StringBuilder();
+            String line;
+            StreamReader sr = new StreamReader(filePath);
+            while ((line = sr.ReadLine()) != null)
+                sb.AppendLine(line);
+            return sb;
+        }
+
+
+        /// <summary>
+        /// Находит последний каталог с результатами проваленных тестов
+        /// </summary>
+        /// <param name="beginPath"></param>
+        /// <returns></returns>
+        private static string GetLastTestCaseDir(string beginPath)
+        {
+            string[] subdirInDir = Directory.GetDirectories(beginPath);
+            // сортируем папки по дате
+            var subdirIndirByDate = subdirInDir.OrderBy(d => Directory.GetLastWriteTime(d));
+            // выбираем последнюю
+            var lastDir = subdirIndirByDate.Last();
+            return lastDir;
+        }
+
+        /// <summary>
+        /// Определить имя проекта
+        /// </summary>
+        /// <param name="FullDLLPath"></param>
+        /// <returns></returns>
+        private static string GetProjectName(string FullDLLPath)
+        {
+            Console.WriteLine(FullDLLPath);
+            string projectName = FullDLLPath.Remove(FullDLLPath.IndexOf(".dll"));
+            projectName = projectName.Substring(projectName.LastIndexOf("\\")+1);
+            Console.WriteLine("projectName is ", projectName);
+            return projectName;
+        }
+
+        /// <summary>
+        /// Определяет путь до скринов в виде URL
+        /// </summary>
+        /// <param name="searchDir"></param>
+        /// <returns></returns>
+        private static string GetScreenPath(string searchDir)
+        {
+            // находим в каталоге теста скриншот по маске файла
+            string[] filesInDir = Directory.GetFiles(searchDir, "*.png");
+            // преобразуем путь до скриншота в УРЛ
+            var url = new System.Uri(filesInDir[0]);
+            Console.WriteLine(url.AbsolutePath);
+            return url.AbsolutePath.Replace("/ERR_ScreenShots/", "/ws/ERR_ScreenShots/");
+        }
+
+        /// <summary>
         /// Generates a modal dialog to display the test-cases in a fixture.
         /// </summary>
         /// <param name="fixture">The fixture element.</param>
@@ -456,9 +566,13 @@ namespace Jatech.NUnit
         private static string GenerateFixtureModal(XElement fixture, string modalId, string title, string warningMessage)
         {
             StringBuilder html = new StringBuilder();
+            StringBuilder steps = new StringBuilder();
+            string defaultPath = "C:\\JenkinsRoot\\workspace\\" + projectName + "\\ERR_ScreenShots\\";
+            defaultPath = GetLastTestCaseDir(defaultPath);
+            currentDir = defaultPath;
 
             html.AppendLine(string.Format("<div class=\"modal fade\" id=\"{0}\" tabindex=\"-1\" role=\"dialog\" aria-labelledby=\"myModalLabel\" aria-hidden=\"true\">", modalId));
-            html.AppendLine("<div class=\"modal-dialog\">");
+            html.AppendLine("<div class=\"modal-dialog modal-lg\">");
             html.AppendLine("<div class=\"modal-content\">");
             html.AppendLine("<div class=\"modal-header\">");
             html.AppendLine("<button type=\"button\" class=\"close\" data-dismiss=\"modal\" aria-hidden=\"true\">&times;</button>");
@@ -519,8 +633,21 @@ namespace Jatech.NUnit
                 // Add failure messages if available
                 if (testCase.Elements("failure").Count() == 1)
                 {
+                    string screenPath = GetScreenPath(defaultPath + "\\" + name);
+                    string screen = screenPath.Replace("C:/JenkinsRoot/workspace/", defaultURL);
+                    steps = GetStepsFromfile(defaultPath + "\\" + name + "\\readme.txt");
+                    steps.Replace("<", "&lt;");
+                    steps.Replace(">", "&gt;");
                     html.AppendLine(string.Format("<div><strong>Message:</strong> {0}</div>", testCase.Element("failure").Element("message").Value));
-                    html.AppendLine(string.Format("<div><strong>Stack Trace:</strong> <pre>{0}</pre></div>", testCase.Element("failure").Element("stack-trace").Value));
+                    // add steps and screen in details
+                    html.AppendLine(string.Format("<div><strong>Steps:</strong> <pre>{0}</pre></div>", steps));
+                    html.AppendLine(string.Format("<div><strong>Screeshot:</strong> <a target=\"_blank\" href=\"{0}\">Показать</a></div>", screen));
+                    html.AppendLine("<div class=\"panel\">");
+                    html.AppendLine("<div class=\"panel-heading\">");
+                    html.AppendLine(string.Format("<a data-toggle=\"collapse\" data-parent=\"#{0}\" href=\"#{0}-trace-{1}\"><strong>Stack Trace: </strong></a></div>", modalId, i));
+                    html.AppendLine(string.Format("<div id=\"{0}-trace-{1}\" class=\"panel-collapse collapse\" \">", modalId, i));
+                    html.AppendLine("<div class=\"panel-body\">");
+                    html.AppendLine(string.Format("<pre>{0}</pre></div></div></div>",  testCase.Element("failure").Element("stack-trace").Value));
                 }
 
                 html.AppendLine("</div>");
