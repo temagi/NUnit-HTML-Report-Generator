@@ -46,12 +46,12 @@ namespace Jatech.NUnit
 
         static string currentDir = "";
 
-        static string defaultURL = "http://10.16.32.150:8080/job/";
+        static string defaultURL = "";
 
         /// <summary>
         /// Usage example.
         /// </summary>
-        private const string Usage = "Usage: NUnitHTMLReportGenerator.exe [input-path] [output-path]";
+        private const string Usage = "Usage: NUnitHTMLReportGenerator.exe [input-path] [output-path] [default-url]";
 
         /// <summary>
         /// Regular expression for acceptable characters in html id.
@@ -74,7 +74,7 @@ namespace Jatech.NUnit
         static void Main(string[] args)
         {
             StringBuilder html = new StringBuilder();
-            bool ok = true;
+            bool ok = false;
             string input = string.Empty, output = string.Empty;
 
             if (args.Length == 1)
@@ -107,6 +107,14 @@ namespace Jatech.NUnit
                 // Check input file exists and output file doesn't
                 //ok = CheckInputAndOutputFile(input, output);
             }
+            else if (args.Length == 3)
+            {
+                input = args[0];
+                output = args[1];
+                defaultURL = args[2] + "job/";
+                ok = true;
+            }
+
             else
             {
                 // Display the usage message
@@ -484,9 +492,8 @@ namespace Jatech.NUnit
             html.AppendLine("<!DOCTYPE html>");
             html.AppendLine("<html>");
             html.AppendLine("<body>");
-            html.AppendLine("<img height=\"48\" style=\"margin-right:1em\" width=\"48\" src=\"/static/32508f1a/images/48x48/clipboard.png\">");
+            html.AppendLine("<img height=\"48\" style=\"margin-right:1em\" width=\"48\" src=\"/static/32508f1a/images/48x48/document.png\">");
             html.AppendLine(string.Format("<a href=\"{0}\">HTML Report</a>", defaultPath.Replace("/ERR_ScreenShots/", "/ws/ERR_ScreenShots/") + "/HTML-report.html"));
-            Console.WriteLine(defaultPath);
             html.AppendLine("</body>");
             html.AppendLine("</html>");
             Console.WriteLine(Directory.GetParent(Directory.GetParent(destination).ToString()).ToString() + "\\buildInfo.html");
